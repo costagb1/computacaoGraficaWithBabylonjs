@@ -1,94 +1,103 @@
-// Sistema Solar Animado com órbitas verticais (em XZ)
-import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import GUI from 'lil-gui';
+const canvas = document.getElementById("renderCanvas");
+const engine = new BABYLON.Engine(canvas, true);
+const scene = new BABYLON.Scene(engine);
+scene.clearColor = new BABYLON.Color3.Black();
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color('black');
+// Câmera
+const camera = new BABYLON.ArcRotateCamera("camera", Math.PI / 2, Math.PI / 2.5, 100, BABYLON.Vector3.Zero(), scene);
+camera.attachControl(canvas, true);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 20, 50);
+// Luz central
+const light = new BABYLON.PointLight("sunLight", BABYLON.Vector3.Zero(), scene);
+light.intensity = 2;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+// Sol
+const sun = BABYLON.MeshBuilder.CreateSphere("sun", { diameter: 8 }, scene);
+const sunMat = new BABYLON.StandardMaterial("sunMat", scene);
+sunMat.emissiveTexture = new BABYLON.Texture("img/2k_sun.jpg", scene);
+sun.material = sunMat;
 
-const controls = new OrbitControls(camera, renderer.domElement);
-
-const light = new THREE.PointLight(0xffffff, 2);
-light.position.set(0, 0, 0);
-scene.add(light);
-
-const sunGeometry = new THREE.SphereGeometry(2, 32, 32);
-const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-const sun = new THREE.Mesh(sunGeometry, sunMaterial);
-scene.add(sun);
-
-const planets = [];
-const orbitGroups = [];
-const planetData = [
-  { name: 'Mercúrio', color: 0x888888, size: 0.3, distance: 4, orbitSpeed: 0.04, rotationSpeed: 0.05 },
-  { name: 'Vênus', color: 0xd4af37, size: 0.6, distance: 6, orbitSpeed: 0.03, rotationSpeed: 0.03 },
-  { name: 'Terra', color: 0x0000ff, size: 0.7, distance: 8, orbitSpeed: 0.02, rotationSpeed: 0.05 },
-  { name: 'Marte', color: 0xff0000, size: 0.5, distance: 10, orbitSpeed: 0.018, rotationSpeed: 0.04 },
-  { name: 'Júpiter', color: 0xffa500, size: 1.2, distance: 13, orbitSpeed: 0.008, rotationSpeed: 0.08 },
-  { name: 'Saturno', color: 0xffe4b5, size: 1, distance: 16, orbitSpeed: 0.006, rotationSpeed: 0.07 },
-  { name: 'Urano', color: 0x00ffff, size: 0.9, distance: 19, orbitSpeed: 0.005, rotationSpeed: 0.06 },
-  { name: 'Netuno', color: 0x00008b, size: 0.9, distance: 22, orbitSpeed: 0.004, rotationSpeed: 0.05 },
+const planetas = [
+  { nome: "Mercúrio", url: "img/2k_mercury.jpg", raio: 1, dist: 10, velOrbita: 4, velRotacao: 1.5 },
+  { nome: "Vênus", url: "img/2k_venus_surface.jpg", raio: 1.2, dist: 15, velOrbita: 3, velRotacao: 0.5 },
+  { nome: "Terra", url: "img/2k_earth_daymap.jpg", raio: 1.3, dist: 20, velOrbita: 2, velRotacao: 2 },
+  { nome: "Marte", url: "img/2k_mars.jpg", raio: 1.1, dist: 25, velOrbita: 1.5, velRotacao: 2 },
+  { nome: "Júpiter", url: "img/2k_jupiter.jpg", raio: 3, dist: 35, velOrbita: 1, velRotacao: 4 },
+  { nome: "Saturno", url: "img/2k_saturn.jpg", raio: 2.5, dist: 45, velOrbita: 0.8, velRotacao: 3.5 },
+  { nome: "Urano", url: "img/2k_uranus.jpg", raio: 2.2, dist: 55, velOrbita: 0.6, velRotacao: 3 },
+  { nome: "Netuno", url: "img/2k_neptune.jpg", raio: 2.1, dist: 65, velOrbita: 0.5, velRotacao: 2.8 }
 ];
 
-const gui = new GUI();
-const settings = { animar: true };
-gui.add(settings, 'animar').name('Ativar Animação');
+const orbitas = [];
+let tempo = 0;
+let animando = false;
+let velocidade = 1;
+let focoAtual = sun;
 
-planetData.forEach(data => {
-  const group = new THREE.Object3D();
-  group.rotation.x = Math.PI / 2; // ROTAÇÃO PARA ÓRBITA VERTICAL
-  scene.add(group);
+planetas.forEach(p => {
+  const orbita = new BABYLON.TransformNode(p.nome + "_orbita", scene);
+  const planeta = BABYLON.MeshBuilder.CreateSphere(p.nome, { diameter: p.raio * 2 }, scene);
+  const mat = new BABYLON.StandardMaterial(p.nome + "_mat", scene);
+  mat.diffuseTexture = new BABYLON.Texture(p.url, scene);
+  planeta.material = mat;
+  planeta.parent = orbita;
+  planeta.position.x = p.dist;
+  orbitas.push({ node: orbita, mesh: planeta, ...p });
 
-  const planetGeometry = new THREE.SphereGeometry(data.size, 32, 32);
-  const planetMaterial = new THREE.MeshStandardMaterial({ color: data.color });
-  const planet = new THREE.Mesh(planetGeometry, planetMaterial);
-  planet.position.x = data.distance;
-  group.add(planet);
-
-  // Orbit circle
-  const orbitGeometry = new THREE.RingGeometry(data.distance - 0.02, data.distance + 0.02, 64);
-  const orbitMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
-  const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
-  orbit.rotation.x = Math.PI / 2;
-  scene.add(orbit);
-
-  planets.push({ mesh: planet, data, angle: Math.random() * Math.PI * 2 });
-  orbitGroups.push(group);
-
-  const folder = gui.addFolder(data.name);
-  folder.add(data, 'orbitSpeed', 0.001, 0.1).name('Vel. Órbita');
-  folder.add(data, 'rotationSpeed', 0.001, 0.1).name('Vel. Rotação');
-});
-
-function animate() {
-  requestAnimationFrame(animate);
-
-  if (settings.animar) {
-    planets.forEach((planetObj, index) => {
-      const { mesh, data } = planetObj;
-      planetObj.angle += data.orbitSpeed;
-      const x = Math.cos(planetObj.angle) * data.distance;
-      const y = Math.sin(planetObj.angle) * data.distance;
-      mesh.position.set(x, 0, y); // plano XZ
-      mesh.rotation.y += data.rotationSpeed;
-    });
+  if (p.nome === "Terra") {
+    const luaOrbita = new BABYLON.TransformNode("orbitaLua", scene);
+    luaOrbita.parent = planeta;
+    const lua = BABYLON.MeshBuilder.CreateSphere("Lua", { diameter: 0.4 }, scene);
+    const matLua = new BABYLON.StandardMaterial("matLua", scene);
+    matLua.diffuseTexture = new BABYLON.Texture("img/2k_moon.jpg", scene);
+    lua.material = matLua;
+    lua.parent = luaOrbita;
+    lua.position.x = 2.5;
+    orbitas.push({ node: luaOrbita, mesh: lua, nome: "Lua", velOrbita: 5, velRotacao: 1 });
   }
 
-  controls.update();
-  renderer.render(scene, camera);
-}
-
-animate();
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  if (p.nome === "Saturno") {
+    const anel = BABYLON.MeshBuilder.CreateTorus("anelSaturno", {
+      diameter: p.raio * 4.2,
+      thickness: 0.1,
+      tessellation: 100
+    }, scene);
+    const matAnel = new BABYLON.StandardMaterial("matAnel", scene);
+    matAnel.diffuseColor = new BABYLON.Color3(0.9, 0.8, 0.6);
+    matAnel.alpha = 0.5;
+    anel.material = matAnel;
+    anel.parent = planeta;
+    anel.rotation.x = Math.PI / 2;
+  }
 });
+
+document.getElementById("toggle").onclick = () => {
+  animando = !animando;
+  document.getElementById("toggle").innerText = animando ? "Pausar" : "Iniciar";
+};
+
+document.getElementById("speed").oninput = (e) => {
+  velocidade = parseFloat(e.target.value);
+  document.getElementById("speedValue").innerText = velocidade.toFixed(1) + "x";
+};
+
+document.getElementById("planetSelect").onchange = (e) => {
+  const nome = e.target.value;
+  const item = orbitas.find(p => p.nome === nome);
+  focoAtual = item ? item.mesh : sun;
+};
+
+engine.runRenderLoop(() => {
+  const dt = engine.getDeltaTime() / 1000;
+  if (animando) tempo += dt * velocidade;
+
+  orbitas.forEach(p => {
+    p.node.rotation.y = tempo * p.velOrbita;
+    p.mesh.rotation.y = tempo * p.velRotacao;
+  });
+
+  camera.setTarget(focoAtual.position);
+  scene.render();
+});
+
+window.addEventListener("resize", () => engine.resize());
